@@ -94,8 +94,6 @@
 #include <sys/prctl.h>	/* For prctl() and PR_SET_DUMPABLE */
 #endif
 
-#include "ssh-agent-notify.h"
-
 typedef enum {
 	AUTH_UNUSED,
 	AUTH_SOCKET,
@@ -148,18 +146,6 @@ extern char *__progname;
 
 /* Default lifetime (0 == forever) */
 static int lifetime = 0;
-
-static void
-notify_user(Identity *id)
-{
-	char *p;
-
-	p = key_fingerprint(id->key, SSH_FP_MD5, SSH_FP_HEX);
-	debug("notifying key challenge signed for fingerprint %s path %s", p,
-	    id->comment);
-	notify_user_macos(p, id->comment);
-	xfree(p);
-}
 
 static void
 close_socket(SocketEntry *e)
@@ -318,9 +304,6 @@ process_authentication_challenge1(SocketEntry *e)
 		buffer_put_char(&msg, SSH_AGENT_RSA_RESPONSE);
 		for (i = 0; i < 16; i++)
 			buffer_put_char(&msg, mdbuf[i]);
-
-		notify_user(id);
-
 		goto send;
 	}
 
@@ -344,7 +327,6 @@ process_sign_request2(SocketEntry *e)
 	extern int datafellows;
 	int odatafellows;
 	int ok = -1, flags;
-	Identity *id;
 	Buffer msg;
 	Key *key;
 
@@ -360,7 +342,7 @@ process_sign_request2(SocketEntry *e)
 
 	key = key_from_blob(blob, blen);
 	if (key != NULL) {
-		id = lookup_identity(key, 2);
+		Identity *id = lookup_identity(key, 2);
 		if (id != NULL && (!id->confirm || confirm_key(id) == 0))
 			ok = key_sign(id->key, &signature, &slen, data, dlen);
 		key_free(key);
@@ -369,7 +351,6 @@ process_sign_request2(SocketEntry *e)
 	if (ok == 0) {
 		buffer_put_char(&msg, SSH2_AGENT_SIGN_RESPONSE);
 		buffer_put_string(&msg, signature, slen);
-		if (id) notify_user(id);
 	} else {
 		buffer_put_char(&msg, SSH_AGENT_FAILURE);
 	}
